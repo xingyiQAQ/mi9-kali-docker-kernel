@@ -13,8 +13,6 @@ TOOLCHAIN_REPO="https://github.com/kdrag0n/proton-clang"
 export ARCH=arm64
 export SUBARCH=arm64
 
-# 后面的代码完全保持不变...
-
 echo "=== 1. 克隆内核源码与工具链 ==="
 git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel
 git clone --depth=1 $TOOLCHAIN_REPO toolchain
@@ -25,14 +23,12 @@ echo "=== 2. 注入 KernelSU-Next (Legacy 分支) ==="
 cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
-# 👇 【终极彻底净化】
-echo "=== 2.5 终极立体净化：全面隔离老旧 KSU 并注入兜底桩 ==="
+echo "=== 2.5 终极立体净化：全面隔离老旧 KSU 并修复高通 Tracepoint 冲突 ==="
 
 # 1. 范围扩大：将所有 .c、.h、Makefile、Kconfig 中的老 KSU 宏全部改名（排除新注入的 drivers/kernelsu）
 find . -type f \( -name "*.c" -o -name "*.h" -o -name "Makefile" -o -name "Kconfig" \) ! -path "./drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
 
-# 2. 符号桩兜底：在内核核心系统文件中追加空函数。
-# 使用 __attribute__((weak)) 声明，即使别处有盲目调用，也会定向到这里，绝不报错。
+# 2. 符号桩兜底：在内核核心系统文件中追加空函数，防止部分文件盲目调用老版 KSU 函数。
 cat << 'EOF' >> kernel/sys.c
 
 /* 专治老旧 KSU 残留符号的全局弱引用兜底桩 */
@@ -44,10 +40,12 @@ int __attribute__((weak)) ksu_handle_setuid(uid_t *uid) { return 0; }
 int __attribute__((weak)) ksu_handle_setgid(gid_t *gid) { return 0; }
 EOF
 
+# 3. 强力修复高通总线模块因 Docker 跟踪选项导致的未定义符号报错（👈 补上了这个关键补丁！）
+if [ -d "drivers/soc/qcom/msm_bus" ]; then
+    find drivers/soc/qcom/msm_bus/ -type f -name "*.c" -exec sed -i '1s/^/#define trace_bus_update_request(...)\n/' {} +
+fi
+
 echo "=== 3. 注入 Docker + LXC + NetHunter 内核配置 ==="
-# 后面的 Docker、网络、以及 AnyKernel3 打包代码完全保持不变...
-
-
 cat << 'EOF' >> arch/arm64/configs/$DEFCONFIG_FILE
 
 # --- KERNELSU CONFIG ---
