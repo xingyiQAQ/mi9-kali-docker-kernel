@@ -148,6 +148,7 @@ cd ..
 git clone https://github.com/osm0sis/AnyKernel3.git
 sed -i 's/device.name1=/device.name1=cepheus/g' AnyKernel3/anykernel.sh
 
+# 精准适配 O=out 编译产物输出路径
 if [ -f "kernel/out/arch/arm64/boot/Image.gz-dtb" ]; then
     cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
 elif [ -f "kernel/out/arch/arm64/boot/Image.gz" ]; then
@@ -159,4 +160,4 @@ fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 诸神退散！高通全部断层符号已全部超度，AnyKernel3 即将见证奇迹！"
+echo "🎉 完美通关！全线绿灯，AnyKernel3 卡刷包成功生成！"
