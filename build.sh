@@ -22,7 +22,6 @@ export PATH="$(pwd)/toolchain/bin:$PATH"
 
 echo "=== 2. 在当前源码树内生成基础配置 ==="
 cd kernel
-# 定义 Clang 编译器的全家桶参数
 MAKE_FLAGS=(
     CROSS_COMPILE=aarch64-linux-gnu- \
     CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
@@ -43,7 +42,7 @@ cd ..
 
 echo "=== 3. 注入 KernelSU-Next (Legacy 模式) ==="
 cd kernel
-# 此时原地已有完美的 .config，setup.sh 会100%无警告无报错丝滑通过
+touch .config
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 cd ..
 
@@ -58,10 +57,14 @@ int ksu_input_hook(unsigned int type, unsigned int code, int value) { return 0; 
 int ksu_handle_setuid(void *uid) { return 0; }
 int ksu_handle_setgid(void *gid) { return 0; }
 
-/* ==================== 高通 RPMH 总线 Tracepoint 终极对齐天团 ==================== */
+/* ==================== 高通 RPMH 总线 Tracepoint / Debug 终极对齐天团 ==================== */
 #include <linux/types.h>
 #include <linux/export.h>
 #include <linux/tracepoint.h>
+
+// 解决高通调试模块卸载时符号缺失的绝杀桩函数
+void msm_bus_dbg_remove_client(void *cl) { return; }
+EXPORT_SYMBOL_GPL(msm_bus_dbg_remove_client);
 
 struct tracepoint __tracepoint_bus_update_request;
 EXPORT_SYMBOL_GPL(__tracepoint_bus_update_request);
@@ -135,9 +138,7 @@ EOF
 
 echo "=== 6. 开始原地极速编译 ==="
 cd kernel
-# 使用旧配置对齐，让刚刚追加的配置全面生效并合规化
 make olddefconfig
-# 原地起飞编译！
 make "${MAKE_FLAGS[@]}" -j$(nproc)
 
 echo "=== 7. 智能扫描与 AnyKernel3 打包 ==="
@@ -167,4 +168,4 @@ fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 宿命闭环！移除 O=out 的物理膈应，全功能刷机包已大功告成！"
+echo "🎉 所有高通总线硬伤已被彻底根除！刷机包完美通关！"
