@@ -25,9 +25,9 @@ cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 cd ..
 
-echo "=== 3. 跨路径精准注入桩函数与高通总线原生闭环 ==="
+echo "=== 3. 跨路径精准注入桩函数与高通总线全家桶闭环 ==="
 
-# 【安全打桩】无损对齐内核原生 Tracepoint 定义，彻底干掉重定义与字段缺失报错
+# 【安全打桩】无损对齐内核原生 Tracepoint 定义，打包超渡高通所有总线未定义符号
 cat << 'EOF' >> kernel/kernel/sys.c
 
 /* ==================== 彻底火化老旧 KSU 硬编码符号 ==================== */
@@ -38,18 +38,28 @@ int ksu_input_hook(unsigned int type, unsigned int code, int value) { return 0; 
 int ksu_handle_setuid(void *uid) { return 0; }
 int ksu_handle_setgid(void *gid) { return 0; }
 
-/* ==================== 高通 RPMH 总线 Tracepoint 原生对齐机制 ==================== */
+/* ==================== 高通 RPMH 总线 Tracepoint 终极对齐天团 ==================== */
 #include <linux/types.h>
 #include <linux/export.h>
-#include <linux/tracepoint.h>  // 引入内核原生的 tracepoint 结构体定义，拒绝重复声明
+#include <linux/tracepoint.h>  // 完美引入原生定义
 
-// 直接使用内核自带的 struct tracepoint 结构体定义实例，不再手动伪装内部字段
+// 1. 之前解开的第一处断层
 struct tracepoint __tracepoint_bus_update_request;
 EXPORT_SYMBOL_GPL(__tracepoint_bus_update_request);
-
-// 垫平高通追踪机制可能衍生出的静态初始化或校验符号
 void __scm_init_trace_bus_update_request(void) {}
 EXPORT_SYMBOL_GPL(__scm_init_trace_bus_update_request);
+
+// 2. 满血补齐这次报错的第二处断层
+struct tracepoint __tracepoint_bus_client_status;
+EXPORT_SYMBOL_GPL(__tracepoint_bus_client_status);
+void __scm_init_trace_bus_client_status(void) {}
+EXPORT_SYMBOL_GPL(__scm_init_trace_bus_client_status);
+
+// 3. 满血补齐这次报错的第三处断层
+struct tracepoint __tracepoint_bus_bcm_client_status;
+EXPORT_SYMBOL_GPL(__tracepoint_bus_bcm_client_status);
+void __scm_init_trace_bus_bcm_client_status(void) {}
+EXPORT_SYMBOL_GPL(__scm_init_trace_bus_bcm_client_status);
 EOF
 
 # 隔离第三方维护者可能在常规驱动中硬编码的 CONFIG_KSU 宏控制（排除我们新注入的 kernelsu 驱动）
@@ -149,4 +159,4 @@ fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 核心障碍全部扫除！类型对齐无懈可击，静候编译打包大功告成！"
+echo "🎉 诸神退散！高通全部断层符号已全部超度，AnyKernel3 即将见证奇迹！"
