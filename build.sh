@@ -25,12 +25,33 @@ cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 cd ..
 
-echo "=== 3. 跨路径精准注入桩函数与高通总线全家桶闭环 ==="
+echo "=== 3. 预先生成配置，解决 O=out 带来的 .config 缺失断层 ==="
+cd kernel
+MAKE_FLAGS=(
+    CROSS_COMPILE=aarch64-linux-gnu- \
+    CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+    CC=clang \
+    AR=llvm-ar \
+    NM=llvm-nm \
+    OBJCOPY=llvm-objcopy \
+    OBJDUMP=llvm-objdump \
+    STRIP=llvm-strip \
+    LLVM=1 \
+    LLVM_IAS=1
+)
 
-# 【安全打桩】无损对齐内核原生 Tracepoint 定义，打包超渡高通所有总线未定义符号
+make clean && make mrproper
+make O=out $DEFCONFIG_FILE
+
+# 复制到根目录，消除 setup.sh 内的 grep 警告
+cp out/.config .config
+cd ..
+
+echo "=== 4. 跨路径精准注入桩函数与高通总线/KSU 终极闭环 ==="
+
 cat << 'EOF' >> kernel/kernel/sys.c
 
-/* ==================== 彻底火化老旧 KSU 硬编码符号 ==================== */
+/* ==================== 彻底火化老旧/混血 KSU 硬编码符号 ==================== */
 int ksu_handle_faccessat(void *dfd, const void *filename, void *mode, void *flags) { return 0; }
 int ksu_handle_execve(void *fd, void *filename, void *argv, void *envp) { return 0; }
 int ksu_handle_vfs_read(void *file, void *buf, void *count, void *pos) { return 0; }
@@ -41,33 +62,28 @@ int ksu_handle_setgid(void *gid) { return 0; }
 /* ==================== 高通 RPMH 总线 Tracepoint 终极对齐天团 ==================== */
 #include <linux/types.h>
 #include <linux/export.h>
-#include <linux/tracepoint.h>  // 完美引入原生定义
+#include <linux/tracepoint.h>
 
-// 1. 之前解开的第一处断层
 struct tracepoint __tracepoint_bus_update_request;
 EXPORT_SYMBOL_GPL(__tracepoint_bus_update_request);
 void __scm_init_trace_bus_update_request(void) {}
 EXPORT_SYMBOL_GPL(__scm_init_trace_bus_update_request);
 
-// 2. 满血补齐这次报错的第二处断层
 struct tracepoint __tracepoint_bus_client_status;
 EXPORT_SYMBOL_GPL(__tracepoint_bus_client_status);
 void __scm_init_trace_bus_client_status(void) {}
 EXPORT_SYMBOL_GPL(__scm_init_trace_bus_client_status);
 
-// 3. 满血补齐这次报错的第三处断层
 struct tracepoint __tracepoint_bus_bcm_client_status;
 EXPORT_SYMBOL_GPL(__tracepoint_bus_bcm_client_status);
 void __scm_init_trace_bus_bcm_client_status(void) {}
 EXPORT_SYMBOL_GPL(__scm_init_trace_bus_bcm_client_status);
 EOF
 
-# 隔离第三方维护者可能在常规驱动中硬编码的 CONFIG_KSU 宏控制（排除我们新注入的 kernelsu 驱动）
 find kernel/ -type f \( -name "*.c" -o -name "*.h" -o -name "Makefile" -o -name "Kconfig" \) ! -path "kernel/drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
 
-echo "=== 4. 注入 Docker + LXC + NetHunter 核心内核配置 ==="
-cat << 'EOF' >> kernel/arch/arm64/configs/$DEFCONFIG_FILE
-
+echo "=== 5. 注入 Docker + LXC + NetHunter + KSU 核心内核配置 ==="
+APPEND_CONFIGS=$(cat << 'EOF'
 # --- KERNELSU NEXT CONFIG ---
 CONFIG_KPROBES=y
 CONFIG_HAVE_KPROBES=y
@@ -122,42 +138,45 @@ CONFIG_BT=y
 CONFIG_BT_RFCOMM=y
 CONFIG_BT_HCIBTUSB=y
 EOF
-
-echo "=== 5. 开始整洁编译 ==="
-cd kernel
-
-MAKE_FLAGS=(
-    CROSS_COMPILE=aarch64-linux-gnu- \
-    CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-    CC=clang \
-    AR=llvm-ar \
-    NM=llvm-nm \
-    OBJCOPY=llvm-objcopy \
-    OBJDUMP=llvm-objdump \
-    STRIP=llvm-strip \
-    LLVM=1 \
-    LLVM_IAS=1
 )
 
-make clean && make mrproper
+echo "$APPEND_CONFIGS" >> kernel/arch/arm64/configs/$DEFCONFIG_FILE
+echo "$APPEND_CONFIGS" >> kernel/out/.config
+echo "$APPEND_CONFIGS" >> kernel/.config
+
+echo "=== 6. 开始整洁编译 ==="
+cd kernel
 make O=out $DEFCONFIG_FILE
 make O=out "${MAKE_FLAGS[@]}" -j$(nproc)
 
-echo "=== 6. 打包 AnyKernel3 卡刷包 ==="
+echo "=== 7. 智能扫描与 AnyKernel3 卡刷包打包 ==="
 cd ..
 git clone https://github.com/osm0sis/AnyKernel3.git
 sed -i 's/device.name1=/device.name1=cepheus/g' AnyKernel3/anykernel.sh
 
-# 精准适配 O=out 编译产物输出路径
-if [ -f "kernel/out/arch/arm64/boot/Image.gz-dtb" ]; then
-    cp kernel/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-elif [ -f "kernel/out/arch/arm64/boot/Image.gz" ]; then
-    cp kernel/out/arch/arm64/boot/Image.gz AnyKernel3/
-else
-    echo "❌ 错误：未找到编译生成的内核文件！"
+# 打印生成目录列表，方便在 Actions 日志中排查具体文件名
+echo ">>> 正在盘点 out/arch/arm64/boot/ 下的编译产物："
+ls -la kernel/out/arch/arm64/boot/
+
+# 智能捕获：只要存在 Image 开头的文件，不管有没有后置扩展名，通通复制进 AnyKernel3
+FOUND_IMAGE=0
+for file in kernel/out/arch/arm64/boot/Image*; do
+    if [ -f "$file" ]; then
+        cp -v "$file" AnyKernel3/
+        FOUND_IMAGE=1
+    fi
+done
+
+# 顺便检查是否有独立生成的 dtbo.img，高通新内核打包经常也需要它
+if [ -f "kernel/out/arch/arm64/boot/dtbo.img" ]; then
+    cp -v "kernel/out/arch/arm64/boot/dtbo.img" AnyKernel3/
+fi
+
+if [ $FOUND_IMAGE -eq 0 ]; then
+    echo "❌ 错误：在编译输出目录中完全没有发现任何以 Image 开头的内核镜像！"
     exit 1
 fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 完美通关！全线绿灯，AnyKernel3 卡刷包成功生成！"
+echo "🎉 诸神退散，大功告成！卡刷包已完美生成，直接起飞！"
