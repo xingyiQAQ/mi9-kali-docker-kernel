@@ -1,0 +1,37 @@
+name: Build Xiaomi 9 Monster Kernel
+
+on:
+  workflow_dispatch: # 允许你手动点击按钮触发编译
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Build Dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y bc build-essential libncurses5-dev libssl-dev tclsh uuid-dev xz-utils zlib1g-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git ccache cpio flex bison liblz4-tool lz4 zip
+
+    - name: Run Build Script
+      run: |
+        chmod +x build.sh
+        ./build.sh
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v${{ github.run_number }}
+        name: Xiaomi 9 Custom Kernel Release v${{ github.run_number }}
+        body: |
+          🚀 小米9 (cepheus) 多功能定制内核编译完成！
+          - 集成 KernelSU-Next (Legacy)
+          - 完美支持 Docker & LXC 容器
+          - 集成 Kali NetHunter (HID/无线驱动)
+          - 底座系统：crDroid 9.11 / Android 13
+        files: docker-ksu-nethunter-kernel-cepheus.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
