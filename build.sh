@@ -25,11 +25,13 @@ echo "=== 2. 注入 KernelSU-Next (Legacy 分支) ==="
 cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
-# 👇 核心修复：把驱动里冲突的老版 KSU 宏定义改名隔离，避免它跟 KernelSU-Next 抢方向盘
-echo "=== 2.5 清理 crDroid 源码自带的老旧 KSU 硬编码冲突 ==="
-sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' drivers/input/input.c
+# 👇 【终极修复】一键强力净化：排除外挂的 drivers/kernelsu 目录，
+# 将整个内核源码树中所有手工硬编码的老旧 KSU 防御性宏定义统统改名，彻底杜绝多点冲突！
+echo "=== 2.5 全盘净化 crDroid 源码中所有硬编码的老旧 KSU 冲突 ==="
+find . -type f -name "*.c" ! -path "./drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
 
 echo "=== 3. 注入 Docker + LXC + NetHunter 内核配置 ==="
+# 后面的 Docker 和网络配置保持不变...
 
 cat << 'EOF' >> arch/arm64/configs/$DEFCONFIG_FILE
 
