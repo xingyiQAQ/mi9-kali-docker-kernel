@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# 开启保护
+# 开启绝对保护，遇错即停
 set -e
 
-# ==================== 配置区域（已更换为 crDroid 官方源） ====================
+# ==================== 配置区域（crDroid 官方源） ====================
 KERNEL_REPO="https://github.com/crdroidandroid/android_kernel_xiaomi_sm8150"
-KERNEL_BRANCH="13.0"                           # 👈 crDroid 9.x 对应的安卓 13 分支
-DEFCONFIG_FILE="vendor/sm8150-perf_defconfig"  # crDroid 同样使用这个统一的高通通用配置
+KERNEL_BRANCH="13.0"                           # crDroid 9.x 对应的安卓 13 分支
+DEFCONFIG_FILE="vendor/sm8150-perf_defconfig"  # 高通通用配置
 TOOLCHAIN_REPO="https://github.com/kdrag0n/proton-clang"
 # ============================================================================
 
@@ -23,24 +23,25 @@ echo "=== 2. 注入 KernelSU-Next (Legacy 分支) ==="
 cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
-echo "=== 2.5 终极立体净化：全面隔离老旧 KSU 并修复高通 Tracepoint 冲突 ==="
+echo "=== 2.5 终极立体净化：全面超度老旧 KSU 并修复高通总线冲突 ==="
 
-# 1. 范围扩大：将所有 .c、.h、Makefile、Kconfig 中的老 KSU 宏全部改名（排除新注入的 drivers/kernelsu）
+# 1. 隔离可能残留的 CONFIG_KSU 宏控制（排除新注入的 drivers/kernelsu）
 find . -type f \( -name "*.c" -o -name "*.h" -o -name "Makefile" -o -name "Kconfig" \) ! -path "./drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
 
-# 2. 符号桩兜底：在内核核心系统文件中追加空函数，防止部分文件盲目调用老版 KSU 函数。
+# 2. 核心系统文件注入【全局强符号兜底实现】！
+# 采用通用 void* 指针绕过复杂的内核结构体声明，让链接器在整条流水线最后 100% 成功配对
 cat << 'EOF' >> kernel/sys.c
 
-/* 专治老旧 KSU 残留符号的全局弱引用兜底桩 */
-int __attribute__((weak)) ksu_handle_faccessat(int *dfd, const char __user **filename, int *mode, int *flags) { return 0; }
-int __attribute__((weak)) ksu_handle_execve(int *fd, struct filename **filename, void *argv, void *envp) { return 0; }
-int __attribute__((weak)) ksu_handle_vfs_read(void *file, char __user **buf, size_t *count, void *pos) { return 0; }
-int __attribute__((weak)) ksu_input_hook(unsigned int type, unsigned int code, int value) { return 0; }
-int __attribute__((weak)) ksu_handle_setuid(uid_t *uid) { return 0; }
-int __attribute__((weak)) ksu_handle_setgid(gid_t *gid) { return 0; }
+/* 彻底超度老旧 KSU 残留硬编码符号的全局强引用实现 */
+int ksu_handle_faccessat(void *dfd, const void *filename, void *mode, void *flags) { return 0; }
+int ksu_handle_execve(void *fd, void *filename, void *argv, void *envp) { return 0; }
+int ksu_handle_vfs_read(void *file, void *buf, void *count, void *pos) { return 0; }
+int ksu_input_hook(unsigned int type, unsigned int code, int value) { return 0; }
+int ksu_handle_setuid(void *uid) { return 0; }
+int ksu_handle_setgid(void *gid) { return 0; }
 EOF
 
-# 3. 强力修复高通总线模块因 Docker 跟踪选项导致的未定义符号报错（👈 补上了这个关键补丁！）
+# 3. 优雅架空高通总线模块因 Docker 跟踪选项导致的未定义符号报错
 if [ -d "drivers/soc/qcom/msm_bus" ]; then
     find drivers/soc/qcom/msm_bus/ -type f -name "*.c" -exec sed -i '1s/^/#define trace_bus_update_request(...)\n/' {} +
 fi
