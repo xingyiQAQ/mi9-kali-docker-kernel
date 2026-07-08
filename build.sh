@@ -1,17 +1,19 @@
 #!/bin/bash
 
-# 开启保护：任何一行命令失败，立即停止脚本，防止盲目往下执行引发连带报错
+# 开启保护
 set -e
 
-# ==================== 配置区域 ====================
-KERNEL_REPO="https://github.com/LineageOS/android_kernel_xiaomi_sm8150"
-KERNEL_BRANCH="lineage-20"
-DEFCONFIG_FILE="vendor/sm8150-perf_defconfig" # 请根据具体源码路径微调
+# ==================== 配置区域（已更换为 crDroid 官方源） ====================
+KERNEL_REPO="https://github.com/crdroidandroid/android_kernel_xiaomi_sm8150"
+KERNEL_BRANCH="13.0"                           # 👈 crDroid 9.x 对应的安卓 13 分支
+DEFCONFIG_FILE="vendor/sm8150-perf_defconfig"  # crDroid 同样使用这个统一的高通通用配置
 TOOLCHAIN_REPO="https://github.com/kdrag0n/proton-clang"
-# ==================================================
+# ============================================================================
 
 export ARCH=arm64
 export SUBARCH=arm64
+
+# 后面的代码完全保持不变...
 
 echo "=== 1. 克隆内核源码与工具链 ==="
 git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel
