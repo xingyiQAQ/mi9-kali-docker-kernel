@@ -25,7 +25,12 @@ echo "=== 2. 注入 KernelSU-Next (Legacy 分支) ==="
 cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
+# 👇 核心修复：把驱动里冲突的老版 KSU 宏定义改名隔离，避免它跟 KernelSU-Next 抢方向盘
+echo "=== 2.5 清理 crDroid 源码自带的老旧 KSU 硬编码冲突 ==="
+sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' drivers/input/input.c
+
 echo "=== 3. 注入 Docker + LXC + NetHunter 内核配置 ==="
+
 cat << 'EOF' >> arch/arm64/configs/$DEFCONFIG_FILE
 
 # --- KERNELSU CONFIG ---
@@ -51,6 +56,12 @@ CONFIG_DEVPTS_MULTIPLE_INSTANCES=y
 CONFIG_OVERLAY_FS=y
 CONFIG_BLK_DEV_LOOP=y
 CONFIG_BLK_DEV_LOOP_MIN_COUNT=8
+
+# --- DOCKER NETWORK EXTRA INFRASTRUCTURE ---
+CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y   # 👈 极其重要！没有它，Docker 端口映射必挂
+CONFIG_NETFILTER_XT_MATCH_CONNTRACK=y  # 状态追踪
+CONFIG_NETFILTER_XT_MATCH_MULTIPORT=y
+CONFIG_NETFILTER_XT_MATCH_STATE=y
 
 # --- NETWORKING & BRIDGING ---
 CONFIG_NETFILTER=y
