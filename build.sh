@@ -14,7 +14,6 @@ export ARCH=arm64
 export SUBARCH=arm64
 
 echo "=== 1. 克隆内核源码与工具链 ==="
-# 确保清理残留，防止本地环境污染
 rm -rf kernel toolchain out AnyKernel3
 git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel
 git clone --depth=1 $TOOLCHAIN_REPO toolchain
@@ -26,9 +25,9 @@ cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 cd ..
 
-echo "=== 3. 终极立体净化：跨路径精准注入桩函数 ==="
+echo "=== 3. 跨路径精准注入桩函数与高通总线净化 ==="
 
-# 【关键修正】使用根目录绝对相对路径，精准直击 Linux 内核核心系统文件 sys.c
+# 【修正】精准打桩 KSU 遗留的强符号，让内核核心顺利放行
 cat << 'EOF' >> kernel/kernel/sys.c
 
 /* ==================== 彻底火化老旧 KSU 硬编码符号 ==================== */
@@ -38,11 +37,14 @@ int ksu_handle_vfs_read(void *file, void *buf, void *count, void *pos) { return 
 int ksu_input_hook(unsigned int type, unsigned int code, int value) { return 0; }
 int ksu_handle_setuid(void *uid) { return 0; }
 int ksu_handle_setgid(void *gid) { return 0; }
-
-/* ==================== 彻底修复 Docker 追踪引发的高通总线未定义符号 ==================== */
-/* 伪造 Tracepoint 核心符号，让 ld.lld 链接器成功配对，跳过厂商总线断层 */
-unsigned char __tracepoint_bus_update_request[64] __attribute__((weak)) = {0};
 EOF
+
+# 【核心突破】不再使用 unsigned char 伪造 Tracepoint。
+# 直接在代码层面将调用高通总线追踪点的地方“静音”定义为空，从源头消灭符号引用。
+if [ -f "kernel/drivers/soc/qcom/msm_bus/msm_bus_dbg_rpmh.c" ]; then
+    echo "发现高通总线调测源码，注入 Tracepoint 静音宏..."
+    sed -i '1s/^/#define trace_bus_update_request(...) do {} while(0)\n/' kernel/drivers/soc/qcom/msm_bus/msm_bus_dbg_rpmh.c
+fi
 
 # 隔离第三方维护者可能在常规驱动中硬编码的 CONFIG_KSU 宏控制（排除我们新注入的 kernelsu 驱动）
 find kernel/ -type f \( -name "*.c" -o -name "*.h" -o -name "Makefile" -o -name "Kconfig" \) ! -path "kernel/drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
@@ -141,4 +143,4 @@ fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 奇迹发生！编译与打包已全部满血通关！"
+echo "🎉 恭喜！高通断层全面修复，编译圆满完成！"
