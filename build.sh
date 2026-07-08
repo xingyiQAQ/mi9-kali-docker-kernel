@@ -1,8 +1,11 @@
 #!/bin/bash
 
+# 开启保护：任何一行命令失败，立即停止脚本，防止盲目往下执行引发连带报错
+set -e
+
 # ==================== 配置区域 ====================
 KERNEL_REPO="https://github.com/LineageOS/android_kernel_xiaomi_sm8150"
-KERNEL_BRANCH="lineage-20.0"
+KERNEL_BRANCH="lineage-20"
 DEFCONFIG_FILE="vendor/sm8150-perf_defconfig" # 请根据具体源码路径微调
 TOOLCHAIN_REPO="https://github.com/kdrag0n/proton-clang"
 # ==================================================
