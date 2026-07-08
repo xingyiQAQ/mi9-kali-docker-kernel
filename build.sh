@@ -27,7 +27,7 @@ cd ..
 
 echo "=== 3. 跨路径精准注入桩函数与高通总线净化 ==="
 
-# 【修正】精准打桩 KSU 遗留的强符号，让内核核心顺利放行
+# 【安全打桩】精准注入 KSU 遗留的硬编码强符号，确保核心层编译通过
 cat << 'EOF' >> kernel/kernel/sys.c
 
 /* ==================== 彻底火化老旧 KSU 硬编码符号 ==================== */
@@ -39,11 +39,12 @@ int ksu_handle_setuid(void *uid) { return 0; }
 int ksu_handle_setgid(void *gid) { return 0; }
 EOF
 
-# 【核心突破】不再使用 unsigned char 伪造 Tracepoint。
-# 直接在代码层面将调用高通总线追踪点的地方“静音”定义为空，从源头消灭符号引用。
-if [ -f "kernel/drivers/soc/qcom/msm_bus/msm_bus_dbg_rpmh.c" ]; then
-    echo "发现高通总线调测源码，注入 Tracepoint 静音宏..."
-    sed -i '1s/^/#define trace_bus_update_request(...) do {} while(0)\n/' kernel/drivers/soc/qcom/msm_bus/msm_bus_dbg_rpmh.c
+# 【核心改进】不改动源码！直接从 Makefile 里踢掉引发错误的编译目标。
+# 这样链接器就不会去找 trace_bus_update_request 符号，也绝不会破坏驱动代码结构。
+QCOM_BUS_MAKEFILE="kernel/drivers/soc/qcom/msm_bus/Makefile"
+if [ -f "$QCOM_BUS_MAKEFILE" ]; then
+    echo "优化高通总线编译策略：从 Makefile 中剥离 msm_bus_dbg_rpmh.o..."
+    sed -i 's/msm_bus_dbg_rpmh.o//g' "$QCOM_BUS_MAKEFILE"
 fi
 
 # 隔离第三方维护者可能在常规驱动中硬编码的 CONFIG_KSU 宏控制（排除我们新注入的 kernelsu 驱动）
@@ -143,4 +144,4 @@ fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 恭喜！高通断层全面修复，编译圆满完成！"
+echo "🎉 奇迹发生了！高通链路冲突被无损剥离，编译打包全线满血通关！"
