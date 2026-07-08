@@ -14,19 +14,15 @@ export ARCH=arm64
 export SUBARCH=arm64
 
 echo "=== 1. 克隆内核源码与工具链 ==="
-rm -rf kernel toolchain out AnyKernel3
+rm -rf kernel toolchain AnyKernel3
 git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel
 git clone --depth=1 $TOOLCHAIN_REPO toolchain
 
 export PATH="$(pwd)/toolchain/bin:$PATH"
 
-echo "=== 2. 注入 KernelSU-Next (Legacy 模式) ==="
+echo "=== 2. 在当前源码树内生成基础配置 ==="
 cd kernel
-curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
-cd ..
-
-echo "=== 3. 预先生成配置，解决 O=out 带来的 .config 缺失断层 ==="
-cd kernel
+# 定义 Clang 编译器的全家桶参数
 MAKE_FLAGS=(
     CROSS_COMPILE=aarch64-linux-gnu- \
     CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
@@ -40,15 +36,18 @@ MAKE_FLAGS=(
     LLVM_IAS=1
 )
 
-make clean && make mrproper
-make O=out $DEFCONFIG_FILE
+# 纯净初始化并原地生成 .config
+make mrproper
+make $DEFCONFIG_FILE
+cd ..
 
-# 复制到根目录，消除 setup.sh 内的 grep 警告
-cp out/.config .config
+echo "=== 3. 注入 KernelSU-Next (Legacy 模式) ==="
+cd kernel
+# 此时原地已有完美的 .config，setup.sh 会100%无警告无报错丝滑通过
+curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 cd ..
 
 echo "=== 4. 跨路径精准注入桩函数与高通总线/KSU 终极闭环 ==="
-
 cat << 'EOF' >> kernel/kernel/sys.c
 
 /* ==================== 彻底火化老旧/混血 KSU 硬编码符号 ==================== */
@@ -80,16 +79,11 @@ void __scm_init_trace_bus_bcm_client_status(void) {}
 EXPORT_SYMBOL_GPL(__scm_init_trace_bus_bcm_client_status);
 EOF
 
+# 隔离常规驱动中可能由第三方维护者硬编码的 CONFIG_KSU 宏
 find kernel/ -type f \( -name "*.c" -o -name "*.h" -o -name "Makefile" -o -name "Kconfig" \) ! -path "kernel/drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
 
-echo "=== 5. 注入 Docker + LXC + NetHunter + KSU 核心内核配置 ==="
-APPEND_CONFIGS=$(cat << 'EOF'
-# --- KERNELSU NEXT CONFIG ---
-CONFIG_KPROBES=y
-CONFIG_HAVE_KPROBES=y
-CONFIG_KPROBE_EVENTS=y
-CONFIG_KSU=y
-CONFIG_KSU_KPROBE_HOOKS=y
+echo "=== 5. 动态向已经由 KSU 调整过的 .config 追加 Docker & NetHunter 特性 ==="
+cat << 'EOF' >> kernel/.config
 
 # --- DOCKER & LXC CORE CONFIG ---
 CONFIG_CGROUPS=y
@@ -138,45 +132,39 @@ CONFIG_BT=y
 CONFIG_BT_RFCOMM=y
 CONFIG_BT_HCIBTUSB=y
 EOF
-)
 
-echo "$APPEND_CONFIGS" >> kernel/arch/arm64/configs/$DEFCONFIG_FILE
-echo "$APPEND_CONFIGS" >> kernel/out/.config
-echo "$APPEND_CONFIGS" >> kernel/.config
-
-echo "=== 6. 开始整洁编译 ==="
+echo "=== 6. 开始原地极速编译 ==="
 cd kernel
-make O=out $DEFCONFIG_FILE
-make O=out "${MAKE_FLAGS[@]}" -j$(nproc)
+# 使用旧配置对齐，让刚刚追加的配置全面生效并合规化
+make olddefconfig
+# 原地起飞编译！
+make "${MAKE_FLAGS[@]}" -j$(nproc)
 
-echo "=== 7. 智能扫描与 AnyKernel3 卡刷包打包 ==="
+echo "=== 7. 智能扫描与 AnyKernel3 打包 ==="
 cd ..
 git clone https://github.com/osm0sis/AnyKernel3.git
 sed -i 's/device.name1=/device.name1=cepheus/g' AnyKernel3/anykernel.sh
 
-# 打印生成目录列表，方便在 Actions 日志中排查具体文件名
-echo ">>> 正在盘点 out/arch/arm64/boot/ 下的编译产物："
-ls -la kernel/out/arch/arm64/boot/
+echo ">>> 正在盘点 arch/arm64/boot/ 下的编译产物："
+ls -la kernel/arch/arm64/boot/ || true
 
-# 智能捕获：只要存在 Image 开头的文件，不管有没有后置扩展名，通通复制进 AnyKernel3
 FOUND_IMAGE=0
-for file in kernel/out/arch/arm64/boot/Image*; do
+for file in kernel/arch/arm64/boot/Image*; do
     if [ -f "$file" ]; then
         cp -v "$file" AnyKernel3/
         FOUND_IMAGE=1
     fi
 done
 
-# 顺便检查是否有独立生成的 dtbo.img，高通新内核打包经常也需要它
-if [ -f "kernel/out/arch/arm64/boot/dtbo.img" ]; then
-    cp -v "kernel/out/arch/arm64/boot/dtbo.img" AnyKernel3/
+if [ -f "kernel/arch/arm64/boot/dtbo.img" ]; then
+    cp -v "kernel/arch/arm64/boot/dtbo.img" AnyKernel3/
 fi
 
 if [ $FOUND_IMAGE -eq 0 ]; then
-    echo "❌ 错误：在编译输出目录中完全没有发现任何以 Image 开头的内核镜像！"
+    echo "❌ 错误：未发现任何编译生成的内核 Image 镜像！"
     exit 1
 fi
 
 cd AnyKernel3
 zip -r9 ../docker-ksu-nethunter-kernel-cepheus.zip *
-echo "🎉 诸神退散，大功告成！卡刷包已完美生成，直接起飞！"
+echo "🎉 宿命闭环！移除 O=out 的物理膈应，全功能刷机包已大功告成！"
