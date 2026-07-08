@@ -25,13 +25,28 @@ echo "=== 2. 注入 KernelSU-Next (Legacy 分支) ==="
 cd kernel
 curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s legacy
 
-# 👇 【终极修复】一键强力净化：排除外挂的 drivers/kernelsu 目录，
-# 将整个内核源码树中所有手工硬编码的老旧 KSU 防御性宏定义统统改名，彻底杜绝多点冲突！
-echo "=== 2.5 全盘净化 crDroid 源码中所有硬编码的老旧 KSU 冲突 ==="
-find . -type f -name "*.c" ! -path "./drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
+# 👇 【终极彻底净化】
+echo "=== 2.5 终极立体净化：全面隔离老旧 KSU 并注入兜底桩 ==="
+
+# 1. 范围扩大：将所有 .c、.h、Makefile、Kconfig 中的老 KSU 宏全部改名（排除新注入的 drivers/kernelsu）
+find . -type f \( -name "*.c" -o -name "*.h" -o -name "Makefile" -o -name "Kconfig" \) ! -path "./drivers/kernelsu/*" -exec sed -i 's/CONFIG_KSU/CONFIG_KSU_MANUAL_HOOK/g' {} +
+
+# 2. 符号桩兜底：在内核核心系统文件中追加空函数。
+# 使用 __attribute__((weak)) 声明，即使别处有盲目调用，也会定向到这里，绝不报错。
+cat << 'EOF' >> kernel/sys.c
+
+/* 专治老旧 KSU 残留符号的全局弱引用兜底桩 */
+int __attribute__((weak)) ksu_handle_faccessat(int *dfd, const char __user **filename, int *mode, int *flags) { return 0; }
+int __attribute__((weak)) ksu_handle_execve(int *fd, struct filename **filename, void *argv, void *envp) { return 0; }
+int __attribute__((weak)) ksu_handle_vfs_read(void *file, char __user **buf, size_t *count, void *pos) { return 0; }
+int __attribute__((weak)) ksu_input_hook(unsigned int type, unsigned int code, int value) { return 0; }
+int __attribute__((weak)) ksu_handle_setuid(uid_t *uid) { return 0; }
+int __attribute__((weak)) ksu_handle_setgid(gid_t *gid) { return 0; }
+EOF
 
 echo "=== 3. 注入 Docker + LXC + NetHunter 内核配置 ==="
-# 后面的 Docker 和网络配置保持不变...
+# 后面的 Docker、网络、以及 AnyKernel3 打包代码完全保持不变...
+
 
 cat << 'EOF' >> arch/arm64/configs/$DEFCONFIG_FILE
 
